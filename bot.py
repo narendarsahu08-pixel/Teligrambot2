@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import threading
 from flask import Flask
@@ -33,6 +34,35 @@ async def send_long_message(update: Update, text: str) -> None:
         except Exception:
             # If Markdown parsing fails (unbalanced * or _), fall back to plain text
             await update.message.reply_text(chunk)
+
+def clean_latex(text: str) -> str:
+    """Safety net: convert common LaTeX notation to plain text,
+    in case the model ignores the system prompt instructions."""
+    # \sqrt{5} or \sqrt5 -> sqrt(5)
+    text = re.sub(r'\\sqrt\{([^}]*)\}', r'sqrt(\1)', text)
+    text = re.sub(r'\\sqrt(\d+)', r'sqrt(\1)', text)
+    # \frac{a}{b} -> (a/b)
+    text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1/\2)', text)
+    # a^{2} -> a^2
+    text = re.sub(r'\^\{([^}]*)\}', r'^\1', text)
+    text = re.sub(r'_\{([^}]*)\}', r'_\1', text)
+    # \text{...} -> ...
+    text = re.sub(r'\\text\{([^}]*)\}', r'\1', text)
+    # \gcd, \neq, \in, \mathbb, \displaystyle, \tag{...} etc
+    text = re.sub(r'\\gcd', 'gcd', text)
+    text = re.sub(r'\\neq', '≠', text)
+    text = re.sub(r'\\in', 'in', text)
+    text = re.sub(r'\\mathbb\s*([A-Z])', r'\1', text)
+    text = re.sub(r'\\displaystyle', '', text)
+    text = re.sub(r'\\Longrightarrow', '=>', text)
+    text = re.sub(r'\\tag\{[^}]*\}', '', text)
+    text = re.sub(r'\\qquad', '  ', text)
+    # remove leftover \( \) \[ \] delimiters
+    text = text.replace('\\(', '').replace('\\)', '')
+    text = text.replace('\\[', '').replace('\\]', '')
+    # remove markdown-style headers (###, ##)
+    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+    return text
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant chatting inside Telegram. "
@@ -72,6 +102,7 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         reply = f"Something went wrong: {e}"
 
+    reply = clean_latex(reply)
     await send_long_message(update, reply)
 
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

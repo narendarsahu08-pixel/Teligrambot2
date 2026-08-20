@@ -27,7 +27,23 @@ async def send_long_message(update: Update, text: str) -> None:
     """Telegram has a 4096 character limit per message. Split long replies into chunks."""
     max_len = 4000
     for i in range(0, len(text), max_len):
-        await update.message.reply_text(text[i:i + max_len])
+        chunk = text[i:i + max_len]
+        try:
+            await update.message.reply_text(chunk, parse_mode="Markdown")
+        except Exception:
+            # If Markdown parsing fails (unbalanced * or _), fall back to plain text
+            await update.message.reply_text(chunk)
+
+SYSTEM_PROMPT = (
+    "You are a helpful assistant chatting inside Telegram. "
+    "Telegram does NOT support LaTeX or Markdown math notation. "
+    "Never use \\(, \\), \\[, \\], \\frac, \\sqrt, \\displaystyle, \\tag, "
+    "or any other LaTeX commands. "
+    "For math, write it in plain text using normal symbols instead, "
+    "for example: sqrt(5), p/q, p^2, x^2 + y^2 = z^2. "
+    "Do not use markdown headers like ### either. "
+    "You may use *bold* and _italic_ for emphasis since Telegram supports those."
+)
 
 async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_message = update.message.text
@@ -40,7 +56,10 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             },
             json={
                 "model": "openai/gpt-oss-120b",
-                "messages": [{"role": "user", "content": user_message}]
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message}
+                ]
             },
             timeout=60
         )
